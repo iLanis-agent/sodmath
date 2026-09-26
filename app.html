@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SodMath - honest sod math</title>
+<style>
+  :root { --bg:#101508; --card:#1a200e; --ink:#eef2df; --dim:#a2ad82; --acc:#7fae4c; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding:28px 24px 8px; max-width:980px; margin:0 auto; display:flex; justify-content:space-between; align-items:baseline; }
+  h1 { margin:0; font-size:28px; }
+  h1 span { color:var(--acc); }
+  nav a { color:var(--dim); text-decoration:none; font-size:14px; }
+  main { max-width:980px; margin:0 auto; padding:16px 24px 60px; display:grid; gap:18px; }
+  .card { background:var(--card); border-radius:14px; padding:20px; }
+  .card h2 { margin:0 0 12px; font-size:13px; letter-spacing:1.5px; color:var(--dim); text-transform:uppercase; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:14px; }
+  label { display:block; font-size:13px; color:var(--dim); margin-bottom:4px; }
+  input, select { width:100%; background:#131a09; border:1px solid #3d4d24; color:var(--ink); border-radius:8px; padding:9px 10px; font-size:15px; }
+  .hint { font-size:12.5px; color:var(--dim); margin-top:10px; }
+  button { cursor:pointer; border:0; border-radius:9px; padding:11px 16px; font-size:15px; background:var(--acc); color:#16210a; font-weight:600; }
+  button.ghost { background:#2e3c1c; color:var(--ink); font-weight:500; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+  .verdict { font-size:17px; line-height:1.65; }
+  .verdict b { color:var(--acc); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-top:16px; }
+  .stat { background:#131a09; border-radius:10px; padding:12px; }
+  .stat .v { font-size:19px; font-weight:700; color:var(--acc); }
+  .stat .k { font-size:12px; color:var(--dim); margin-top:2px; }
+  .note { margin-top:14px; font-size:13.5px; color:var(--dim); }
+  .note b { color:var(--acc); font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sod<span>Math</span></h1>
+  <nav><a href="index.html">home</a></nav>
+</header>
+<main>
+  <section class="card">
+    <h2>The lawn</h2>
+    <div class="grid">
+      <div><label>Gross area (sq ft)</label><input id="gross" type="number" value="800"></div>
+      <div><label>Beds + structures (sq ft)</label><input id="beds" type="number" value="0"></div>
+      <div><label>Edge shape</label><select id="shape">
+        <option value="straight" selected>Mostly straight (5% waste)</option>
+        <option value="curved">Curves and angles (10% waste)</option>
+      </select></div>
+      <div><label>Pallet price (450 sq ft)</label><input id="palletPrice" type="number" step="0.01" value="450"></div>
+      <div><label>Delivery fee</label><input id="delivery" type="number" step="0.01" value="80"></div>
+      <div><label>Forecast high (F)</label><input id="temp" type="number" value="72"></div>
+    </div>
+    <p class="hint">Sod is cut to order and dies on the pallet - about 24 hours in heat, 48 in cool weather. The clock starts at the farm, not at your curb.</p>
+    <div class="row">
+      <button id="run">Order it honestly</button>
+      <button class="ghost" data-preset="front">front lawn redo</button>
+      <button class="ghost" data-preset="curvy">backyard with curves</button>
+      <button class="ghost" data-preset="strip">the side strip</button>
+    </div>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <h2>The order</h2>
+    <p class="verdict" id="verdictText"></p>
+    <div class="stats" id="stats"></div>
+    <p class="note" id="advice"></p>
+  </section>
+
+  <section class="card">
+    <h2>The pallet clock</h2>
+    <p class="note">Sod is <b>harvested to order and dies stacked</b> - 24 hours in heat, 48 cool, starting at the farm. The ground is raked before the truck is called, the crew is ready before it arrives, and the first pallet is laid before it leaves. Seams <b>stagger like brick</b>, edges get rolled flat once, and establishment water is no joke: <b>half an inch a day for two weeks</b>, thousands of gallons for a real lawn.</p>
+  </section>
+</main>
+<script src="engine.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var money = function (x) { return '$' + x.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+
+  var PRESETS = {
+    front: { gross: 800, beds: 0, shape: 'straight', temp: 72 },
+    curvy: { gross: 2000, beds: 200, shape: 'curved', temp: 80 },
+    strip: { gross: 150, beds: 0, shape: 'straight', temp: 65 }
+  };
+  document.querySelectorAll('[data-preset]').forEach(function (b) {
+    b.onclick = function () {
+      var p = PRESETS[b.dataset.preset];
+      Object.keys(p).forEach(function (k) { $(k).value = p[k]; });
+      run();
+    };
+  });
+
+  function run() {
+    var gross = +$('gross').value || 0;
+    if (gross <= 0) { alert('Enter an area.'); return; }
+    var temp = +$('temp').value || 72;
+    var est = SodMath.estimate({
+      grossSqFt: gross, bedsSqFt: +$('beds').value || 0, shape: $('shape').value,
+      palletPrice: +$('palletPrice').value || 450, delivery: +$('delivery').value || 0
+    });
+    var clock = SodMath.palletHours(temp);
+
+    $('verdictText').innerHTML = est.netSqFt + ' net sq ft at ' + Math.round(est.wastePct * 100) + '% waste is ' +
+      est.orderSqFt + ' sq ft - <b>' + est.pallets + ' pallet' + (est.pallets > 1 ? 's' : '') + '</b> (' +
+      est.deliveredSqFt + ' sq ft delivered, ' + est.leftoverSqFt + ' spare) for <b>' + money(est.total) +
+      '</b> with delivery and a roller. The pallet clock at ' + temp + 'F: <b>' + clock + ' hours</b>.';
+
+    var stats = [
+      { v: est.pallets, k: 'pallets (' + est.rolls + ' rolls)' },
+      { v: est.leftoverSqFt + ' sq ft', k: 'pallet-rounding spare' },
+      { v: clock + ' h', k: 'pallet clock at ' + temp + 'F' },
+      { v: est.waterGallons.toLocaleString('en-US'), k: 'gallons, first 2 weeks' },
+      { v: money(est.total), k: 'sod + delivery + roller' }
+    ];
+    $('stats').innerHTML = stats.map(function (x) {
+      return '<div class="stat"><div class="v">' + x.v + '</div><div class="k">' + x.k + '</div></div>';
+    }).join('');
+
+    $('advice').innerHTML = SodMath.advice(est, temp);
+    $('result').hidden = false;
+    $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  $('run').onclick = run;
+})();
+</script>
+</body>
+</html>
